@@ -1,0 +1,1065 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>修繕リードタイム分析ダッシュボード</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.5.0/chart.umd.min.js"></script>
+<style>
+  :root{
+    --bg:#EEF1F4;
+    --grid-line: rgba(22,32,43,0.06);
+    --surface:#FFFFFF;
+    --surface-2:#F7F9FA;
+    --ink:#16202B;
+    --ink-soft:#5B6B7A;
+    --ink-faint:#8C99A6;
+    --line:#DAE1E7;
+    --line-strong:#B9C3CC;
+    --accent:#E29A3B;
+    --accent-ink:#7A4B0A;
+    --accent-soft:#FBEBD3;
+    --good:#2E7D4F;
+    --good-soft:#E4F3E9;
+    --danger:#C1443C;
+    --danger-soft:#FBE6E4;
+    --data-1:#2F6F76;
+    --data-2:#E29A3B;
+    --data-3:#8E5FBD;
+    --data-4:#3D7A45;
+    --data-5:#3D6B9E;
+    --data-6:#B85C8A;
+    --data-7:#B0752E;
+    --data-8:#6B7A8F;
+    --radius:10px;
+    --font-jp: "Noto Sans JP", -apple-system, "Hiragino Kaku Gothic ProN", "Yu Gothic", sans-serif;
+    --font-num: "Inter", -apple-system, "Segoe UI", sans-serif;
+  }
+
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    font-family:var(--font-jp);
+    color:var(--ink);
+    background-color:var(--bg);
+    background-image:
+      linear-gradient(var(--grid-line) 1px, transparent 1px),
+      linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
+    background-size: 28px 28px;
+    min-height:100vh;
+    line-height:1.5;
+    -webkit-font-smoothing:antialiased;
+  }
+  ::selection{ background: var(--accent-soft); color: var(--accent-ink); }
+  *:focus-visible{ outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  .wrap{ max-width:1320px; margin:0 auto; padding:24px 20px 60px; }
+
+  /* ---------- Header ---------- */
+  header.app-header{
+    display:flex; align-items:flex-end; justify-content:space-between; gap:20px;
+    flex-wrap:wrap;
+    padding-bottom:18px; margin-bottom:20px;
+    border-bottom:1px solid var(--line-strong);
+  }
+  .brand-tag{
+    font-family:var(--font-num); font-size:11px; letter-spacing:.12em;
+    color:var(--accent-ink); background:var(--accent-soft);
+    display:inline-block; padding:3px 8px; border-radius:4px; margin-bottom:10px;
+    font-weight:600;
+  }
+  h1{ font-size:22px; margin:0 0 4px; font-weight:800; letter-spacing:.01em;}
+  .subtitle{ color:var(--ink-soft); font-size:13.5px; margin:0; }
+
+  /* ---------- Upload zone ---------- */
+  .upload-zone{
+    background:var(--surface);
+    border:1.5px dashed var(--line-strong);
+    border-radius: var(--radius);
+    padding:40px 24px;
+    text-align:center;
+    transition: border-color .15s ease, background .15s ease;
+    position:relative;
+  }
+  .upload-zone.drag-over{ border-color:var(--accent); background:var(--accent-soft); }
+  .upload-icon{ margin-bottom:14px; }
+  .upload-zone h2{ font-size:16.5px; margin:0 0 6px; font-weight:700; }
+  .upload-zone p{ color:var(--ink-soft); font-size:13px; margin:0 0 18px; }
+  .btn{
+    font-family:var(--font-jp); font-weight:700; font-size:13.5px;
+    border:none; border-radius:7px; padding:10px 20px; cursor:pointer;
+    background:var(--ink); color:#fff; transition:opacity .12s ease, transform .05s ease;
+  }
+  .btn:hover{ opacity:.88; }
+  .btn:active{ transform:translateY(1px); }
+  .btn.secondary{ background:var(--surface-2); color:var(--ink); border:1px solid var(--line-strong); }
+  .btn.small{ padding:6px 12px; font-size:12.5px; border-radius:6px; }
+  .btn:disabled{ opacity:.4; cursor:not-allowed; }
+  input[type="file"]{ display:none; }
+  .upload-hint{ font-family:var(--font-num); font-size:11px; color:var(--ink-faint); margin-top:14px; }
+  .upload-error{
+    margin-top:16px; padding:10px 14px; border-radius:7px;
+    background:var(--danger-soft); color:var(--danger); font-size:13px; font-weight:600;
+    display:none; text-align:left;
+  }
+
+  /* ---------- File bar (after load) ---------- */
+  .file-bar{
+    display:none; align-items:center; gap:14px; flex-wrap:wrap;
+    background:var(--surface); border:1px solid var(--line); border-radius:var(--radius);
+    padding:12px 16px; margin-bottom:18px;
+  }
+  .file-bar .fname{ font-weight:700; font-size:13.5px; }
+  .file-bar .fmeta{ font-family:var(--font-num); font-variant-numeric:tabular-nums; font-size:11.5px; color:var(--ink-soft); }
+  .file-bar .spacer{ flex:1; }
+
+  /* ---------- Panels / cards ---------- */
+  .panel{
+    background:var(--surface);
+    border:1px solid var(--line);
+    border-radius:var(--radius);
+    position:relative;
+  }
+  .panel::before, .panel::after{
+    content:""; position:absolute; width:10px; height:10px;
+    border-color:var(--line-strong); pointer-events:none;
+  }
+  .corner-bracket::before{ top:-1px; left:-1px; border-top:2px solid var(--ink); border-left:2px solid var(--ink); }
+  .corner-bracket::after{ bottom:-1px; right:-1px; border-bottom:2px solid var(--ink); border-right:2px solid var(--ink); }
+
+  .panel-head{
+    display:flex; align-items:baseline; justify-content:space-between; gap:10px;
+    padding:14px 16px 10px; flex-wrap:wrap;
+  }
+  .panel-title{ display:flex; align-items:baseline; gap:8px; }
+  .panel-title h3{ font-size:14.5px; margin:0; font-weight:700; }
+  .spec-tag{
+    font-family:var(--font-num); font-size:10.5px; color:var(--accent-ink);
+    background:var(--accent-soft); padding:2px 6px; border-radius:4px; font-weight:600; letter-spacing:.03em;
+  }
+  .panel-meta{ font-family:var(--font-num); font-variant-numeric:tabular-nums; font-size:11px; color:var(--ink-faint); }
+  .panel-body{ padding:4px 16px 18px; }
+
+  /* ---------- Summary strip ---------- */
+  .summary-grid{
+    display:grid; grid-template-columns:repeat(4,1fr); gap:12px; margin-bottom:18px;
+  }
+  .stat-card{
+    background:var(--surface); border:1px solid var(--line); border-radius:var(--radius);
+    padding:14px 16px;
+  }
+  .stat-card .label{ font-size:11.5px; color:var(--ink-soft); font-weight:600; margin-bottom:6px; }
+  .stat-card .value{ font-family:var(--font-num); font-variant-numeric:tabular-nums; font-size:24px; font-weight:700; letter-spacing:-0.02em; }
+  .stat-card .value .unit{ font-size:13px; font-weight:500; color:var(--ink-soft); margin-left:2px; }
+  .stat-card .sub{ font-size:11px; color:var(--ink-faint); margin-top:4px; font-family:var(--font-num); font-variant-numeric:tabular-nums; }
+
+  /* ---------- Highlight (best/worst) ---------- */
+  .highlight-grid{ display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-bottom:18px; }
+  .hl-card{ background:var(--surface); border:1px solid var(--line); border-radius:var(--radius); padding:14px 16px; }
+  .hl-card h4{ font-size:12.5px; margin:0 0 10px; display:flex; align-items:center; gap:6px; font-weight:700;}
+  .hl-dot{ width:8px; height:8px; border-radius:50%; display:inline-block; }
+  .hl-row{ display:flex; align-items:center; justify-content:space-between; padding:6px 0; border-top:1px solid var(--line); font-size:13px; }
+  .hl-row:first-of-type{ border-top:none; }
+  .hl-row .name{ font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:62%; }
+  .hl-row .n{ color:var(--ink-faint); font-family:var(--font-num); font-variant-numeric:tabular-nums; font-size:11px; margin-left:6px;}
+  .hl-row .days{ font-family:var(--font-num); font-variant-numeric:tabular-nums; font-weight:700; }
+
+  /* ---------- Control bar ---------- */
+  .control-bar{
+    background:var(--surface); border:1px solid var(--line); border-radius:var(--radius);
+    padding:14px 16px; margin-bottom:18px;
+    display:flex; flex-wrap:wrap; gap:18px; align-items:flex-start;
+  }
+  .control-group .ctl-label{
+    font-family:var(--font-num); font-size:10.5px; color:var(--ink-faint); font-weight:600;
+    letter-spacing:.06em; margin-bottom:8px; text-transform:uppercase;
+  }
+  .lead-btns{ display:flex; flex-wrap:wrap; gap:6px; max-width:640px; }
+  .lead-btn{
+    font-family:var(--font-jp); font-size:12.5px; font-weight:600; cursor:pointer;
+    padding:7px 12px; border-radius:7px; border:1px solid var(--line-strong);
+    background:var(--surface-2); color:var(--ink-soft);
+  }
+  .lead-btn[disabled]{ opacity:.35; cursor:not-allowed; }
+  .lead-btn.active{ background:var(--ink); color:#fff; border-color:var(--ink); }
+  .range-selects{ display:flex; align-items:center; gap:8px; }
+  .range-selects select{
+    font-family:var(--font-num); font-size:12.5px; padding:7px 8px; border-radius:6px;
+    border:1px solid var(--line-strong); background:var(--surface); color:var(--ink);
+  }
+  .range-sep{ color:var(--ink-faint); font-size:12px; }
+
+  .contractor-panel .panel-body{ padding-top:0; }
+  .search-box{
+    width:100%; max-width:360px; padding:8px 10px; border-radius:7px; border:1px solid var(--line-strong);
+    font-family:var(--font-jp); font-size:13px; margin-bottom:8px; background:var(--surface-2);
+  }
+  .quick-actions{ display:flex; flex-wrap:wrap; gap:6px; margin-bottom:10px; }
+  .contractor-list{
+    max-height:280px; overflow-y:auto; border-top:1px solid var(--line);
+    display:grid; grid-template-columns:repeat(auto-fill, minmax(240px, 1fr)); gap:0 16px;
+    align-content:start;
+  }
+  .contractor-item{
+    display:flex; align-items:center; gap:8px; padding:7px 4px;
+    border-bottom:1px solid var(--line); font-size:12.8px; cursor:pointer;
+  }
+  .contractor-item:hover{ background:var(--surface-2); }
+  .contractor-item input{ flex-shrink:0; }
+  .contractor-item .swatch{ width:9px; height:9px; border-radius:2px; flex-shrink:0; }
+  .contractor-item .cname{ flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .contractor-item .cn{ font-family:var(--font-num); font-variant-numeric:tabular-nums; font-size:10.5px; color:var(--ink-faint); }
+  .empty-note{ color:var(--ink-faint); font-size:12px; padding:14px 4px; }
+
+  .bar-frame{ position:relative; }
+  .trend-frame{ position:relative; height:480px; }
+  canvas{ max-width:100%; }
+
+  /* ---------- Table ---------- */
+  details.table-panel{ background:var(--surface); border:1px solid var(--line); border-radius:var(--radius); }
+  details.table-panel > summary{
+    cursor:pointer; padding:14px 16px; font-weight:700; font-size:14px; list-style:none;
+    display:flex; justify-content:space-between; align-items:center;
+  }
+  details.table-panel > summary::-webkit-details-marker{ display:none; }
+  details.table-panel > summary::after{ content:"▾"; color:var(--ink-faint); font-size:12px; }
+  details.table-panel[open] > summary::after{ content:"▴"; }
+  .table-wrap{ padding:0 16px 16px; overflow-x:auto; max-height:440px; overflow-y:auto; }
+  .table-wrap thead th{ position:sticky; top:0; background:var(--surface); }
+  table{ width:100%; border-collapse:collapse; font-size:12.8px; }
+  th, td{ text-align:left; padding:8px 10px; border-bottom:1px solid var(--line); white-space:nowrap; }
+  th{ font-family:var(--font-num); font-size:10.5px; letter-spacing:.04em; color:var(--ink-soft); cursor:pointer; user-select:none; text-transform:uppercase; }
+  th:hover{ color:var(--ink); }
+  td.num, th.num{ font-family:var(--font-num); font-variant-numeric:tabular-nums; text-align:right; }
+
+  /* ---------- Footer note ---------- */
+  .footnote{
+    margin-top:22px; padding:14px 16px; border-radius:var(--radius);
+    background:var(--surface-2); border:1px solid var(--line);
+    font-size:12px; color:var(--ink-soft);
+  }
+  .footnote strong{ color:var(--ink); }
+
+  .hidden{ display:none !important; }
+
+  @media (max-width: 860px){
+    .summary-grid{ grid-template-columns:repeat(2,1fr); }
+    .highlight-grid{ grid-template-columns:1fr; }
+    .contractor-list{ grid-template-columns:1fr; max-height:240px; }
+    .trend-frame{ height:340px; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="app-header">
+    <div>
+      <span class="brand-tag">REPAIR OPS / FIG-DASH</span>
+      <h1>修繕リードタイム分析ダッシュボード</h1>
+      <p class="subtitle">協力会社別・月別のリードタイムを可視化します。ファイルをアップロードするたびにその場で集計します（履歴は保存されません）。</p>
+    </div>
+  </header>
+
+  <!-- Upload zone -->
+  <section id="uploadZone" class="upload-zone" data-state="empty">
+    <div class="upload-icon">
+      <svg width="46" height="46" viewBox="0 0 46 46" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <rect x="7" y="6" width="32" height="34" rx="2" stroke="#16202B" stroke-width="2"/>
+        <path d="M14 15h18M14 22h18M14 29h11" stroke="#16202B" stroke-width="2" stroke-linecap="round"/>
+        <circle cx="34" cy="34" r="9" fill="#E29A3B"/>
+        <path d="M34 30v8M30.5 33.5 34 30l3.5 3.5" stroke="#16202B" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    </div>
+    <h2>修繕依頼データをアップロード</h2>
+    <p>Excel（.xlsx）または CSV ファイルをドラッグ＆ドロップ、もしくは選択してください</p>
+    <button class="btn" id="browseBtn" type="button">ファイルを選択</button>
+    <input type="file" id="fileInput" accept=".xlsx,.xls,.csv">
+    <div class="upload-hint">対応列：施工店 / 日本財託依頼日 / 一次訪問予定決定日 / 日本財託発注日 / 二次訪問予定決定日 / 二次訪問完了日 / 業者完了報告日 / 完了報告確認日</div>
+    <div class="upload-error" id="uploadError"></div>
+  </section>
+
+  <!-- File bar (shown after successful load) -->
+  <div class="file-bar" id="fileBar">
+    <span class="fname" id="fbName"></span>
+    <span class="fmeta" id="fbMeta"></span>
+    <div class="spacer"></div>
+    <button class="btn secondary small" id="changeFileBtn" type="button">別のファイルを読み込む</button>
+  </div>
+
+  <!-- Dashboard (hidden until data loaded) -->
+  <div id="dashboard" class="hidden">
+
+    <div class="panel corner-bracket" style="margin-bottom:18px;">
+      <div class="panel-head">
+        <div class="panel-title"><h3>リードタイムの区間を選択</h3><span class="spec-tag">STEP 1</span></div>
+      </div>
+      <div class="panel-body">
+        <div class="control-bar" style="border:none; padding:0; margin-bottom:0;">
+          <div class="control-group">
+            <div class="ctl-label">開始日 → 終了日</div>
+            <div class="range-selects">
+              <select id="fromCol"></select>
+              <span class="range-sep">→</span>
+              <select id="toCol"></select>
+            </div>
+            <div class="lead-btns" id="presetBtns" style="margin-top:8px;"></div>
+          </div>
+          <div class="control-group">
+            <div class="ctl-label">対象期間（開始月基準）</div>
+            <div class="range-selects">
+              <select id="monthFrom"></select>
+              <span class="range-sep">〜</span>
+              <select id="monthTo"></select>
+            </div>
+          </div>
+        </div>
+        <div class="upload-error" id="leadWarning" style="display:none; margin-top:12px;"></div>
+        <div id="confirmRow" style="margin-top:16px;">
+          <button class="btn" id="confirmRangeBtn" type="button">この区間で集計する</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="dashboardBody" class="hidden">
+
+      <div class="summary-grid" id="summaryGrid"></div>
+      <div class="highlight-grid" id="highlightGrid"></div>
+
+      <!-- Contractor panel (full width) -->
+      <div class="panel corner-bracket contractor-panel" style="margin-bottom:16px;">
+        <div class="panel-head">
+          <div class="panel-title"><h3>協力会社</h3><span class="spec-tag">FILTER</span></div>
+        </div>
+        <div class="panel-body">
+          <input type="text" class="search-box" id="contractorSearch" placeholder="会社名で検索…">
+          <div class="quick-actions">
+            <button class="btn secondary small" id="selectTop5">上位5社</button>
+            <button class="btn secondary small" id="selectAll">全選択</button>
+            <button class="btn secondary small" id="clearSelection">全解除</button>
+          </div>
+          <div class="contractor-list" id="contractorList"></div>
+        </div>
+      </div>
+
+      <!-- FIG.01: full width, height grows to fit every contractor (no scroll/crop) -->
+      <div class="panel corner-bracket" style="margin-bottom:16px;">
+        <div class="panel-head">
+          <div class="panel-title"><h3 id="barTitle">協力会社別 平均リードタイム</h3><span class="spec-tag">FIG.01</span></div>
+          <span class="panel-meta" id="barMeta"></span>
+        </div>
+        <div class="panel-body">
+          <div class="bar-frame"><canvas id="barChart"></canvas></div>
+        </div>
+      </div>
+
+      <!-- FIG.02: full width, same width as the detail table below -->
+      <div class="panel corner-bracket" style="margin-bottom:16px;">
+        <div class="panel-head">
+          <div class="panel-title"><h3 id="trendTitle">月別推移（協力会社ごと）</h3><span class="spec-tag">FIG.02</span></div>
+          <span class="panel-meta" id="trendMeta"></span>
+        </div>
+        <div class="panel-body">
+          <div class="trend-frame"><canvas id="trendChart"></canvas></div>
+        </div>
+      </div>
+
+      <details class="table-panel" style="margin-top:16px;">
+        <summary>詳細データテーブル（協力会社 × 月）</summary>
+        <div class="table-wrap">
+          <table id="dataTable">
+            <thead><tr>
+              <th data-key="contractor">協力会社</th>
+              <th data-key="month">月</th>
+              <th class="num" data-key="n">件数</th>
+              <th class="num" data-key="avg">平均(日)</th>
+              <th class="num" data-key="median">中央値(日)</th>
+            </tr></thead>
+            <tbody id="dataTableBody"></tbody>
+          </table>
+        </div>
+      </details>
+
+      <div class="footnote" id="footnote"></div>
+    </div>
+  </div>
+
+</div>
+
+
+<script>
+(function(){
+  "use strict";
+
+  // ---------------------------------------------------------------
+  // 1. Date columns available for "from" / "to" selection (process order)
+  // ---------------------------------------------------------------
+  const DATE_COLUMNS = [
+    '日本財託依頼日',
+    '日本財託依頼確認日',
+    '一次訪問予定決定日',
+    '業者見積提出日',
+    '日本財託発注日',
+    '日本財託発注確認日',
+    '二次訪問予定決定日',
+    '二次訪問完了日',
+    '業者完了報告日',
+    '完了報告確認日'
+  ];
+  // Quick presets: [fromCol, toCol, shortLabel] — only shown if both columns exist in the file
+  const PRESETS = [
+    { from:'日本財託依頼日', to:'業者完了報告日', label:'全体（依頼→完了報告）' },
+    { from:'日本財託依頼日', to:'完了報告確認日', label:'全体（依頼→社内完了確認）' },
+    { from:'日本財託依頼日', to:'一次訪問予定決定日', label:'初動（依頼→一次訪問予定）' },
+    { from:'日本財託依頼日', to:'日本財託発注日', label:'発注（依頼→発注）' },
+    { from:'日本財託発注日', to:'二次訪問完了日', label:'施工（発注→二次訪問完了）' },
+    { from:'二次訪問完了日', to:'業者完了報告日', label:'報告（訪問完了→完了報告）' },
+  ];
+  const REQUIRED_BASE_COLS = ['施工店'];
+  const CONTRACTOR_COL = '施工店';
+
+  const DATA_COLORS = ['#2F6F76','#E29A3B','#8E5FBD','#3D7A45','#3D6B9E','#B85C8A','#B0752E','#6B7A8F'];
+
+  // ---------------------------------------------------------------
+  // State
+  // ---------------------------------------------------------------
+  let rawRows = [];
+  let parsedRows = [];          // rows with parsed Date objects
+  let availableDateCols = [];   // date columns actually present in the uploaded file
+  let fromCol = null;
+  let toCol = null;
+  let months = [];              // sorted list of 'YYYY-MM'
+  let selectedContractors = new Set();
+  let contractorColorMap = {};
+  let sortState = { key:'avg', dir:'asc' };
+  let barChartInstance = null;
+  let trendChartInstance = null;
+
+  // ---------------------------------------------------------------
+  // Utilities
+  // ---------------------------------------------------------------
+  function parseDate(v){
+    if (v === null || v === undefined) return null;
+    if (v instanceof Date) return isNaN(v.getTime()) ? null : v;
+    const s = String(v).trim();
+    if (!s) return null;
+    let m = s.match(/^(\d{4})[\/\-年](\d{1,2})[\/\-月](\d{1,2})/);
+    if (m){
+      const d = new Date(Number(m[1]), Number(m[2])-1, Number(m[3]));
+      return isNaN(d.getTime()) ? null : d;
+    }
+    const d2 = new Date(s);
+    return isNaN(d2.getTime()) ? null : d2;
+  }
+
+  function toMonthKey(d){
+    return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0');
+  }
+
+  function daysBetween(a, b){
+    return Math.round((b.getTime() - a.getTime()) / 86400000);
+  }
+
+  function mean(arr){ return arr.reduce((s,v)=>s+v,0) / arr.length; }
+  function median(arr){
+    const s = [...arr].sort((a,b)=>a-b);
+    const mid = Math.floor(s.length/2);
+    return s.length % 2 ? s[mid] : (s[mid-1]+s[mid])/2;
+  }
+  function fmt1(n){ return (Math.round(n*10)/10).toFixed(1); }
+  function escapeHtml(s){
+    return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  }
+
+  function colorForContractor(name){
+    if (contractorColorMap[name]) return contractorColorMap[name];
+    const used = Object.keys(contractorColorMap).length;
+    const c = DATA_COLORS[used % DATA_COLORS.length];
+    contractorColorMap[name] = c;
+    return c;
+  }
+
+  function currentLabel(){
+    return (fromCol || '?') + ' → ' + (toCol || '?');
+  }
+
+  // ---------------------------------------------------------------
+  // 2. File loading & parsing
+  // ---------------------------------------------------------------
+  const uploadZone = document.getElementById('uploadZone');
+  const fileInput = document.getElementById('fileInput');
+  const browseBtn = document.getElementById('browseBtn');
+  const uploadError = document.getElementById('uploadError');
+  const fileBar = document.getElementById('fileBar');
+  const fbName = document.getElementById('fbName');
+  const fbMeta = document.getElementById('fbMeta');
+  const changeFileBtn = document.getElementById('changeFileBtn');
+  const dashboard = document.getElementById('dashboard');
+  const leadWarning = document.getElementById('leadWarning');
+
+  browseBtn.addEventListener('click', () => fileInput.click());
+  fileInput.addEventListener('change', (e) => {
+    if (e.target.files && e.target.files[0]) handleFile(e.target.files[0]);
+  });
+  ['dragenter','dragover'].forEach(evt => {
+    uploadZone.addEventListener(evt, (e) => { e.preventDefault(); uploadZone.classList.add('drag-over'); });
+  });
+  ['dragleave','drop'].forEach(evt => {
+    uploadZone.addEventListener(evt, (e) => { e.preventDefault(); uploadZone.classList.remove('drag-over'); });
+  });
+  uploadZone.addEventListener('drop', (e) => {
+    const f = e.dataTransfer.files && e.dataTransfer.files[0];
+    if (f) handleFile(f);
+  });
+  changeFileBtn.addEventListener('click', () => {
+    fileInput.value = '';
+    resetState();
+    uploadZone.style.display = '';
+    fileBar.style.display = 'none';
+    dashboard.classList.add('hidden');
+  });
+
+  function resetState(){
+    rawRows = []; parsedRows = []; availableDateCols = []; fromCol = null; toCol = null;
+    months = []; selectedContractors = new Set(); contractorColorMap = {};
+    if (barChartInstance){ barChartInstance.destroy(); barChartInstance = null; }
+    if (trendChartInstance){ trendChartInstance.destroy(); trendChartInstance = null; }
+    dashboardStarted = false;
+    dashboardBody.classList.add('hidden');
+    confirmRow.style.display = '';
+  }
+
+  function showError(msg){
+    uploadError.textContent = msg;
+    uploadError.style.display = 'block';
+  }
+  function clearError(){
+    uploadError.style.display = 'none';
+    uploadError.textContent = '';
+  }
+
+  async function handleFile(file){
+    clearError();
+    resetState();
+    try {
+      const ext = (file.name.split('.').pop() || '').toLowerCase();
+      let workbook;
+      if (ext === 'csv'){
+        const buf = await file.arrayBuffer();
+        let text;
+        try {
+          text = new TextDecoder('utf-8', { fatal:true }).decode(buf);
+        } catch(e){
+          text = new TextDecoder('shift_jis').decode(buf);
+        }
+        workbook = XLSX.read(text, { type:'string', raw:false });
+      } else {
+        const buf = await file.arrayBuffer();
+        workbook = XLSX.read(buf, { type:'array', cellDates:true });
+      }
+      const sheetName = workbook.SheetNames[0];
+      const sheet = workbook.Sheets[sheetName];
+      const rows = XLSX.utils.sheet_to_json(sheet, { defval:null, raw:false });
+
+      if (!rows.length){
+        showError('ファイルからデータを読み取れませんでした。1行目に列見出しがあるか確認してください。');
+        return;
+      }
+      const headers = Object.keys(rows[0]);
+      const missingBase = REQUIRED_BASE_COLS.filter(c => !headers.includes(c));
+      if (missingBase.length){
+        showError('必須列が見つかりません：' + missingBase.join('、') + '\n読み込んだ列：' + headers.join('、'));
+        return;
+      }
+
+      availableDateCols = DATE_COLUMNS.filter(c => headers.includes(c));
+      if (availableDateCols.length < 2){
+        showError('リードタイムを計算できる日付列が2つ未満でした。列名を確認してください。');
+        return;
+      }
+
+      rawRows = rows;
+      parsedRows = rows.map(r => {
+        const o = { contractor: (r[CONTRACTOR_COL] || '（未設定）').toString().trim(), dates:{} };
+        availableDateCols.forEach(col => { o.dates[col] = parseDate(r[col]); });
+        return o;
+      });
+
+      fbName.textContent = file.name;
+      fbMeta.textContent = rows.length.toLocaleString() + ' 行 ・ ' + new Date().toLocaleString('ja-JP');
+      fileBar.style.display = 'flex';
+      uploadZone.style.display = 'none';
+
+      buildColumnSelectors();
+      buildPresetButtons();
+      const defaultPreset = PRESETS.find(p => availableDateCols.includes(p.from) && availableDateCols.includes(p.to));
+      if (defaultPreset){ fromCol = defaultPreset.from; toCol = defaultPreset.to; }
+      else { fromCol = availableDateCols[0]; toCol = availableDateCols[availableDateCols.length-1]; }
+      document.getElementById('fromCol').value = fromCol;
+      document.getElementById('toCol').value = toCol;
+      highlightActivePreset();
+
+      buildMonthOptions();
+      dashboard.classList.remove('hidden');
+      // Wait for explicit confirmation before showing results (see confirmRangeBtn handler)
+    } catch(err){
+      console.error(err);
+      showError('ファイルの読み込み中にエラーが発生しました：' + (err && err.message ? err.message : String(err)));
+    }
+  }
+
+  // ---------------------------------------------------------------
+  // 3. From / To column selectors
+  // ---------------------------------------------------------------
+  function buildColumnSelectors(){
+    const fromSel = document.getElementById('fromCol');
+    const toSel = document.getElementById('toCol');
+    const opts = availableDateCols.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('');
+    fromSel.innerHTML = opts;
+    toSel.innerHTML = opts;
+    fromSel.onchange = () => { fromCol = fromSel.value; highlightActivePreset(); afterLeadChange(); };
+    toSel.onchange = () => { toCol = toSel.value; highlightActivePreset(); afterLeadChange(); };
+  }
+
+  function buildPresetButtons(){
+    const wrap = document.getElementById('presetBtns');
+    wrap.innerHTML = '';
+    PRESETS.forEach(p => {
+      const available = availableDateCols.includes(p.from) && availableDateCols.includes(p.to);
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'lead-btn';
+      btn.dataset.from = p.from;
+      btn.dataset.to = p.to;
+      btn.textContent = p.label;
+      if (!available){
+        btn.disabled = true;
+        btn.title = '必要な列（' + p.from + ' / ' + p.to + '）がファイルにありません';
+      } else {
+        btn.addEventListener('click', () => {
+          fromCol = p.from; toCol = p.to;
+          document.getElementById('fromCol').value = fromCol;
+          document.getElementById('toCol').value = toCol;
+          highlightActivePreset();
+          afterLeadChange();
+        });
+      }
+      wrap.appendChild(btn);
+    });
+  }
+
+  function highlightActivePreset(){
+    document.querySelectorAll('#presetBtns .lead-btn').forEach(btn => {
+      btn.classList.toggle('active', btn.dataset.from === fromCol && btn.dataset.to === toCol);
+    });
+  }
+
+  function afterLeadChange(){
+    if (fromCol === toCol){
+      leadWarning.style.display = 'block';
+      leadWarning.textContent = '開始日と終了日に同じ列が選択されています。リードタイムは常に0日になります。';
+    } else {
+      leadWarning.style.display = 'none';
+    }
+    if (dashboardStarted) render();
+  }
+
+  const dashboardBody = document.getElementById('dashboardBody');
+  const confirmRow = document.getElementById('confirmRow');
+  let dashboardStarted = false;
+  document.getElementById('confirmRangeBtn').addEventListener('click', () => {
+    dashboardStarted = true;
+    initDefaultSelection();
+    dashboardBody.classList.remove('hidden');
+    confirmRow.style.display = 'none';
+    render();
+  });
+
+  // ---------------------------------------------------------------
+  // 4. Derived data computation
+  // ---------------------------------------------------------------
+  function computeLeadRecords(){
+    const out = [];
+    let missing = 0, negative = 0;
+    parsedRows.forEach(r => {
+      const from = r.dates[fromCol];
+      const to = r.dates[toCol];
+      if (!from || !to){ missing++; return; }
+      const d = daysBetween(from, to);
+      if (d < 0){ negative++; return; }
+      out.push({ contractor: r.contractor, month: toMonthKey(from), days: d });
+    });
+    return { records: out, missing, negative };
+  }
+
+  function buildMonthOptions(){
+    const set = new Set();
+    availableDateCols.forEach(col => {
+      parsedRows.forEach(r => { const f = r.dates[col]; if (f) set.add(toMonthKey(f)); });
+    });
+    months = Array.from(set).sort();
+    const monthFrom = document.getElementById('monthFrom');
+    const monthTo = document.getElementById('monthTo');
+    monthFrom.innerHTML = months.map(m => `<option value="${m}">${m}</option>`).join('');
+    monthTo.innerHTML = months.map(m => `<option value="${m}">${m}</option>`).join('');
+    if (months.length){
+      monthFrom.value = months[0];
+      monthTo.value = months[months.length-1];
+    }
+    monthFrom.onchange = render;
+    monthTo.onchange = render;
+  }
+
+  function getMonthRange(){
+    const from = document.getElementById('monthFrom').value;
+    const to = document.getElementById('monthTo').value;
+    return { from, to };
+  }
+
+  function initDefaultSelection(){
+    const { records } = computeLeadRecords();
+    const counts = {};
+    records.forEach(r => counts[r.contractor] = (counts[r.contractor]||0)+1);
+    const top = Object.entries(counts).sort((a,b)=>b[1]-a[1]).slice(0,5).map(e=>e[0]);
+    selectedContractors = new Set(top);
+    top.forEach(colorForContractor);
+  }
+
+  // ---------------------------------------------------------------
+  // 5. Aggregation helpers (respect current from/to + month range + search)
+  // ---------------------------------------------------------------
+  function filteredRecords(){
+    const { records } = computeLeadRecords();
+    const { from, to } = getMonthRange();
+    if (!from || !to) return records;
+    return records.filter(r => r.month >= from && r.month <= to);
+  }
+
+  function aggregateByContractor(records){
+    const map = {};
+    records.forEach(r => {
+      if (!map[r.contractor]) map[r.contractor] = [];
+      map[r.contractor].push(r.days);
+    });
+    return Object.entries(map).map(([name, arr]) => ({
+      contractor: name, n: arr.length, avg: mean(arr), median: median(arr)
+    }));
+  }
+
+  function aggregateByContractorMonth(records){
+    const map = {};
+    records.forEach(r => {
+      const key = r.contractor + '|' + r.month;
+      if (!map[key]) map[key] = { contractor:r.contractor, month:r.month, arr:[] };
+      map[key].arr.push(r.days);
+    });
+    return Object.values(map).map(o => ({
+      contractor:o.contractor, month:o.month, n:o.arr.length, avg:mean(o.arr), median:median(o.arr)
+    }));
+  }
+
+  function aggregateOverallByMonth(records){
+    const map = {};
+    records.forEach(r => {
+      if (!map[r.month]) map[r.month] = [];
+      map[r.month].push(r.days);
+    });
+    return map;
+  }
+
+  // ---------------------------------------------------------------
+  // 6. Render: summary, highlights
+  // ---------------------------------------------------------------
+  function renderSummary(records){
+    const grid = document.getElementById('summaryGrid');
+    const { missing, negative } = computeLeadRecords();
+    const contractors = new Set(records.map(r=>r.contractor));
+    const daysArr = records.map(r=>r.days);
+    grid.innerHTML = `
+      <div class="stat-card"><div class="label">対象データ件数</div><div class="value">${records.length.toLocaleString()}<span class="unit">件</span></div><div class="sub">元データ ${rawRows.length.toLocaleString()} 件中</div></div>
+      <div class="stat-card"><div class="label">平均リードタイム</div><div class="value">${daysArr.length ? fmt1(mean(daysArr)) : '—'}<span class="unit">日</span></div><div class="sub">${escapeHtml(currentLabel())}</div></div>
+      <div class="stat-card"><div class="label">中央値</div><div class="value">${daysArr.length ? fmt1(median(daysArr)) : '—'}<span class="unit">日</span></div><div class="sub">対象協力会社 ${contractors.size} 社</div></div>
+      <div class="stat-card"><div class="label">除外データ（日付欠損）</div><div class="value">${(missing+negative).toLocaleString()}<span class="unit">件</span></div><div class="sub">日付欠損 ${missing} / 日付不整合 ${negative}</div></div>
+    `;
+  }
+
+  function renderHighlights(byContractor){
+    const grid = document.getElementById('highlightGrid');
+    const eligible = byContractor.filter(c => c.n >= 5);
+    const sorted = [...eligible].sort((a,b)=>a.avg-b.avg);
+    const best = sorted.slice(0,3);
+    const worst = sorted.slice(-3).reverse();
+    function rowHtml(c){
+      return `<div class="hl-row"><span class="name">${escapeHtml(c.contractor)}</span><span><span class="n">n=${c.n}</span> <span class="days">${fmt1(c.avg)}日</span></span></div>`;
+    }
+    grid.innerHTML = `
+      <div class="hl-card"><h4><span class="hl-dot" style="background:var(--good)"></span>リードタイムが短い協力会社（対応が速い）</h4>${best.length ? best.map(rowHtml).join('') : '<div class="empty-note">n=5件以上のデータがありません</div>'}</div>
+      <div class="hl-card"><h4><span class="hl-dot" style="background:var(--danger)"></span>リードタイムが長い協力会社（改善余地あり）</h4>${worst.length ? worst.map(rowHtml).join('') : '<div class="empty-note">n=5件以上のデータがありません</div>'}</div>
+    `;
+  }
+
+  // ---------------------------------------------------------------
+  // 7. Render: contractor list
+  // ---------------------------------------------------------------
+  const MIN_CANDIDATE_N = 10; // contractors with fewer cases than this aren't shown as candidates
+
+  function getCandidateContractors(byContractor){
+    const q = document.getElementById('contractorSearch').value.trim().toLowerCase();
+    const sorted = [...byContractor].filter(c => c.n >= MIN_CANDIDATE_N).sort((a,b)=>b.n-a.n);
+    return q ? sorted.filter(c => c.contractor.toLowerCase().includes(q)) : sorted;
+  }
+
+  function renderContractorList(byContractor){
+    const listEl = document.getElementById('contractorList');
+    const filtered = getCandidateContractors(byContractor);
+    if (!filtered.length){
+      listEl.innerHTML = '<div class="empty-note">該当する協力会社がありません（n≧' + MIN_CANDIDATE_N + '件が対象）</div>';
+      return;
+    }
+    listEl.innerHTML = filtered.map(c => {
+      const checked = selectedContractors.has(c.contractor) ? 'checked' : '';
+      const color = colorForContractor(c.contractor);
+      return `<label class="contractor-item">
+        <input type="checkbox" data-name="${escapeHtml(c.contractor)}" ${checked}>
+        <span class="swatch" style="background:${color}"></span>
+        <span class="cname" title="${escapeHtml(c.contractor)}">${escapeHtml(c.contractor)}</span>
+        <span class="cn">n=${c.n}</span>
+      </label>`;
+    }).join('');
+    listEl.querySelectorAll('input[type=checkbox]').forEach(cb => {
+      cb.addEventListener('change', () => {
+        const name = cb.getAttribute('data-name');
+        if (cb.checked){ selectedContractors.add(name); colorForContractor(name); }
+        else selectedContractors.delete(name);
+        renderCharts();
+        renderTable();
+      });
+    });
+  }
+
+  // ---------------------------------------------------------------
+  // 8. Render: charts
+  // ---------------------------------------------------------------
+  function renderBarChart(byContractor){
+    const eligible = byContractor.filter(c => c.n >= MIN_CANDIDATE_N).sort((a,b)=>a.avg-b.avg);
+    document.getElementById('barMeta').textContent = 'n≧' + MIN_CANDIDATE_N + '件の協力会社 ' + eligible.length + ' 社';
+    document.getElementById('barTitle').textContent = '協力会社別 平均リードタイム — ' + currentLabel();
+
+    const canvas = document.getElementById('barChart');
+    const frame = canvas.parentElement; // .bar-frame
+    const h = Math.max(320, eligible.length * 26 + 60);
+    frame.style.height = h + 'px';
+
+    const labels = eligible.map(c => c.contractor);
+    const data = eligible.map(c => Math.round(c.avg*10)/10);
+    const colors = eligible.map(c => selectedContractors.has(c.contractor) ? colorForContractor(c.contractor) : 'rgba(22,32,43,0.16)');
+
+    if (barChartInstance) barChartInstance.destroy();
+    if (!eligible.length){
+      frame.style.height = '160px';
+      return;
+    }
+    barChartInstance = new Chart(canvas, {
+      type:'bar',
+      data:{ labels, datasets:[{ data, backgroundColor:colors, borderRadius:3, maxBarThickness:18 }] },
+      options:{
+        indexAxis:'y',
+        responsive:true,
+        maintainAspectRatio:false,
+        plugins:{
+          legend:{ display:false },
+          tooltip:{ callbacks:{ label:(ctx) => {
+            const c = eligible[ctx.dataIndex];
+            return `平均 ${fmt1(c.avg)}日 ／ 中央値 ${fmt1(c.median)}日 ／ n=${c.n}`;
+          }}}
+        },
+        scales:{
+          x:{ title:{ display:true, text:'平均リードタイム（日）', font:{ family:'Noto Sans JP', size:11 } }, grid:{ color:'rgba(22,32,43,0.06)' } },
+          y:{ grid:{ display:false }, ticks:{ font:{ size:10.5 } } }
+        },
+        onClick:(evt, elements) => {
+          if (!elements.length) return;
+          const idx = elements[0].index;
+          const name = eligible[idx].contractor;
+          if (selectedContractors.has(name)) selectedContractors.delete(name);
+          else { selectedContractors.add(name); colorForContractor(name); }
+          renderContractorList(byContractor);
+          renderCharts();
+          renderTable();
+        }
+      }
+    });
+  }
+
+  function renderTrendChart(records){
+    document.getElementById('trendTitle').textContent = '月別推移 — ' + currentLabel();
+    const { from, to } = getMonthRange();
+    const rangeMonths = months.filter(m => (!from || m >= from) && (!to || m <= to));
+
+    const byContractorMonth = {};
+    records.forEach(r => {
+      if (!selectedContractors.has(r.contractor)) return;
+      const key = r.contractor;
+      if (!byContractorMonth[key]) byContractorMonth[key] = {};
+      if (!byContractorMonth[key][r.month]) byContractorMonth[key][r.month] = [];
+      byContractorMonth[key][r.month].push(r.days);
+    });
+
+    const overallByMonth = aggregateOverallByMonth(records);
+    const overallData = rangeMonths.map(m => overallByMonth[m] ? Math.round(mean(overallByMonth[m])*10)/10 : null);
+
+    const datasets = [];
+    Object.keys(byContractorMonth).forEach(name => {
+      const data = rangeMonths.map(m => {
+        const arr = byContractorMonth[name][m];
+        return arr ? Math.round(mean(arr)*10)/10 : null;
+      });
+      datasets.push({
+        label:name, data, borderColor:colorForContractor(name), backgroundColor:colorForContractor(name),
+        spanGaps:false, tension:.25, pointRadius:3, borderWidth:2
+      });
+    });
+    datasets.push({
+      label:'全体平均', data:overallData, borderColor:'rgba(22,32,43,0.45)', backgroundColor:'rgba(22,32,43,0.45)',
+      borderDash:[5,4], spanGaps:false, tension:.25, pointRadius:0, borderWidth:1.6
+    });
+
+    document.getElementById('trendMeta').textContent = selectedContractors.size + ' 社を表示中';
+
+    const canvas = document.getElementById('trendChart');
+    if (trendChartInstance) trendChartInstance.destroy();
+    if (!rangeMonths.length){
+      const ctx = canvas.getContext('2d');
+      ctx.clearRect(0,0,canvas.width,canvas.height);
+      return;
+    }
+    trendChartInstance = new Chart(canvas, {
+      type:'line',
+      data:{ labels:rangeMonths, datasets },
+      options:{
+        responsive:true,
+        maintainAspectRatio:false,
+        plugins:{ legend:{ position:'bottom', labels:{ font:{ size:11, family:'Noto Sans JP' }, boxWidth:10 } } },
+        scales:{
+          x:{ grid:{ display:false }, ticks:{ font:{ size:10.5 } } },
+          y:{ title:{ display:true, text:'平均リードタイム（日）', font:{ family:'Noto Sans JP', size:11 } }, grid:{ color:'rgba(22,32,43,0.06)' } }
+        }
+      }
+    });
+  }
+
+  function renderCharts(){
+    const records = filteredRecords();
+    const byContractor = aggregateByContractor(records);
+    renderBarChart(byContractor);
+    renderTrendChart(records);
+    return { records, byContractor };
+  }
+
+  // ---------------------------------------------------------------
+  // 9. Render: table
+  // ---------------------------------------------------------------
+  function renderTable(){
+    const records = filteredRecords();
+    let rows = aggregateByContractorMonth(records);
+    if (selectedContractors.size){
+      rows = rows.filter(r => selectedContractors.has(r.contractor));
+    }
+    const { key, dir } = sortState;
+    rows.sort((a,b) => {
+      let av = a[key], bv = b[key];
+      if (typeof av === 'string'){ av = av.toLowerCase(); bv = bv.toLowerCase(); }
+      if (av < bv) return dir==='asc' ? -1 : 1;
+      if (av > bv) return dir==='asc' ? 1 : -1;
+      return 0;
+    });
+    const tbody = document.getElementById('dataTableBody');
+    if (!rows.length){
+      tbody.innerHTML = '<tr><td colspan="5" class="empty-note">表示するデータがありません（協力会社を選択してください）</td></tr>';
+      return;
+    }
+    tbody.innerHTML = rows.map(r => `
+      <tr>
+        <td>${escapeHtml(r.contractor)}</td>
+        <td>${r.month}</td>
+        <td class="num">${r.n}</td>
+        <td class="num">${fmt1(r.avg)}</td>
+        <td class="num">${fmt1(r.median)}</td>
+      </tr>
+    `).join('');
+  }
+
+  document.querySelectorAll('#dataTable th').forEach(th => {
+    th.addEventListener('click', () => {
+      const key = th.getAttribute('data-key');
+      if (sortState.key === key) sortState.dir = sortState.dir === 'asc' ? 'desc' : 'asc';
+      else { sortState.key = key; sortState.dir = 'asc'; }
+      renderTable();
+    });
+  });
+
+  // ---------------------------------------------------------------
+  // 10. Footnote
+  // ---------------------------------------------------------------
+  function renderFootnote(){
+    document.getElementById('footnote').innerHTML =
+      `<strong>集計方法：</strong>選択中の区間「${escapeHtml(currentLabel())}」の日数（終了日−開始日）を集計しています。月の区分は開始日が属する月を使用しています。除外の基準は2つです。①開始日・終了日のどちらかが未入力の行のみを除外（他の列の欠損は無視します）。②日付の前後関係が逆転している行（データ不整合）。棒グラフの棒をクリックすると、下の推移グラフに協力会社を追加・削除できます。このアプリはファイルをアップロードするたびにブラウザ内で集計するのみで、データはサーバーに送信・保存されません。`;
+  }
+
+  // ---------------------------------------------------------------
+  // Master render
+  // ---------------------------------------------------------------
+  function render(){
+    const records = filteredRecords();
+    const byContractor = aggregateByContractor(records);
+    renderSummary(records);
+    renderHighlights(byContractor);
+    renderContractorList(byContractor);
+    renderCharts();
+    renderTable();
+    renderFootnote();
+  }
+
+  document.getElementById('contractorSearch').addEventListener('input', () => {
+    const records = filteredRecords();
+    const byContractor = aggregateByContractor(records);
+    renderContractorList(byContractor);
+  });
+  document.getElementById('selectTop5').addEventListener('click', () => {
+    const records = filteredRecords();
+    const byContractor = aggregateByContractor(records);
+    const top = getCandidateContractors(byContractor).slice(0,5).map(c=>c.contractor);
+    selectedContractors = new Set(top);
+    top.forEach(colorForContractor);
+    renderContractorList(byContractor);
+    renderCharts();
+    renderTable();
+  });
+  document.getElementById('selectAll').addEventListener('click', () => {
+    const records = filteredRecords();
+    const byContractor = aggregateByContractor(records);
+    const all = getCandidateContractors(byContractor).map(c=>c.contractor);
+    selectedContractors = new Set(all);
+    all.forEach(colorForContractor);
+    renderContractorList(byContractor);
+    renderCharts();
+    renderTable();
+  });
+  document.getElementById('clearSelection').addEventListener('click', () => {
+    selectedContractors = new Set();
+    const records = filteredRecords();
+    const byContractor = aggregateByContractor(records);
+    renderContractorList(byContractor);
+    renderCharts();
+    renderTable();
+  });
+
+})();
+</script>
+
+</body>
+</html>

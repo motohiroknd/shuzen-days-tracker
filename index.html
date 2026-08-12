@@ -701,20 +701,6 @@
   // ---------------------------------------------------------------
   // 4. Derived data computation
   // ---------------------------------------------------------------
-  function computeLeadRecords(){
-    const out = [];
-    let missing = 0, negative = 0;
-    parsedRows.forEach(r => {
-      const from = r.dates[fromCol];
-      const to = r.dates[toCol];
-      if (!from || !to){ missing++; return; }
-      const d = daysBetween(from, to);
-      if (d < 0){ negative++; return; }
-      out.push({ contractor: r.contractor, month: toMonthKey(from), days: d });
-    });
-    return { records: out, missing, negative };
-  }
-
   function buildMonthOptions(){
     const set = new Set();
     availableDateCols.forEach(col => {
@@ -739,25 +725,31 @@
     return { from, to };
   }
 
-  // Total rows in the ORIGINAL uploaded data whose start-date (fromCol) falls
-  // within the selected 対象期間, regardless of whether toCol is present.
-  // This gives an honest "out of how many in this period" denominator that
-  // moves together with the 対象期間 selector.
-  function computePeriodRawCount(){
+  // Single source of truth for the current from/to + 対象期間 selection.
+  // A row only counts toward periodTotal if its start-date (fromCol) falls
+  // in the selected period; from there it's split into valid / missing /
+  // negative so periodTotal = records.length + missing + negative always.
+  function computeScopedStats(){
     const { from, to } = getMonthRange();
-    if (!from || !to) return rawRows.length;
-    let count = 0;
+    let periodTotal = 0, missing = 0, negative = 0;
+    const records = [];
     parsedRows.forEach(r => {
       const f = r.dates[fromCol];
-      if (!f) return;
+      if (!f) return; // no start date at all: can't place in a period
       const m = toMonthKey(f);
-      if (m >= from && m <= to) count++;
+      if (from && to && (m < from || m > to)) return; // outside selected period
+      periodTotal++;
+      const t = r.dates[toCol];
+      if (!t){ missing++; return; }
+      const d = daysBetween(f, t);
+      if (d < 0){ negative++; return; }
+      records.push({ contractor: r.contractor, month: m, days: d });
     });
-    return count;
+    return { records, periodTotal, missing, negative };
   }
 
   function initDefaultSelection(){
-    const { records } = computeLeadRecords();
+    const { records } = computeScopedStats();
     const counts = {};
     records.forEach(r => counts[r.contractor] = (counts[r.contractor]||0)+1);
     const top = Object.entries(counts).sort((a,b)=>b[1]-a[1]).slice(0,5).map(e=>e[0]);
@@ -769,10 +761,7 @@
   // 5. Aggregation helpers (respect current from/to + month range + search)
   // ---------------------------------------------------------------
   function filteredRecords(){
-    const { records } = computeLeadRecords();
-    const { from, to } = getMonthRange();
-    if (!from || !to) return records;
-    return records.filter(r => r.month >= from && r.month <= to);
+    return computeScopedStats().records;
   }
 
   function aggregateByContractor(records){
@@ -812,10 +801,9 @@
   // ---------------------------------------------------------------
   function renderSummary(records){
     const grid = document.getElementById('summaryGrid');
-    const { missing, negative } = computeLeadRecords();
+    const { periodTotal, missing, negative } = computeScopedStats();
     const contractors = new Set(records.map(r=>r.contractor));
     const daysArr = records.map(r=>r.days);
-    const periodTotal = computePeriodRawCount();
     grid.innerHTML = `
       <div class="stat-card"><div class="label">対象データ件数</div><div class="value">${records.length.toLocaleString()}<span class="unit">件</span></div><div class="sub">対象期間の元データ ${periodTotal.toLocaleString()} 件中</div></div>
       <div class="stat-card"><div class="label">除外データ件数</div><div class="value">${(missing+negative).toLocaleString()}<span class="unit">件</span></div><div class="sub">日付欠損 ${missing} / 日付不整合 ${negative}</div></div>

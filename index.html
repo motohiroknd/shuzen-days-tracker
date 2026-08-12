@@ -398,6 +398,14 @@
 (function(){
   "use strict";
 
+  // Canvas text (contractor names, axis labels) can look soft/blurry if
+  // rendered at 1x resolution. Force a higher pixel ratio so Chart.js draws
+  // at a denser resolution and text comes out crisp on any display.
+  if (window.Chart){
+    Chart.defaults.devicePixelRatio = Math.max(window.devicePixelRatio || 1, 2);
+    Chart.defaults.font.family = "'Noto Sans JP', -apple-system, sans-serif";
+  }
+
   // ---------------------------------------------------------------
   // 1. Date columns available for "from" / "to" selection (process order)
   // ---------------------------------------------------------------

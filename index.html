@@ -720,7 +720,7 @@
     availableDateCols.forEach(col => {
       parsedRows.forEach(r => { const f = r.dates[col]; if (f) set.add(toMonthKey(f)); });
     });
-    months = Array.from(set).sort();
+    months = Array.from(set).sort().filter(m => m >= '2026-02');
     const monthFrom = document.getElementById('monthFrom');
     const monthTo = document.getElementById('monthTo');
     monthFrom.innerHTML = months.map(m => `<option value="${m}">${m}</option>`).join('');
@@ -737,6 +737,23 @@
     const from = document.getElementById('monthFrom').value;
     const to = document.getElementById('monthTo').value;
     return { from, to };
+  }
+
+  // Total rows in the ORIGINAL uploaded data whose start-date (fromCol) falls
+  // within the selected 対象期間, regardless of whether toCol is present.
+  // This gives an honest "out of how many in this period" denominator that
+  // moves together with the 対象期間 selector.
+  function computePeriodRawCount(){
+    const { from, to } = getMonthRange();
+    if (!from || !to) return rawRows.length;
+    let count = 0;
+    parsedRows.forEach(r => {
+      const f = r.dates[fromCol];
+      if (!f) return;
+      const m = toMonthKey(f);
+      if (m >= from && m <= to) count++;
+    });
+    return count;
   }
 
   function initDefaultSelection(){
@@ -798,11 +815,12 @@
     const { missing, negative } = computeLeadRecords();
     const contractors = new Set(records.map(r=>r.contractor));
     const daysArr = records.map(r=>r.days);
+    const periodTotal = computePeriodRawCount();
     grid.innerHTML = `
-      <div class="stat-card"><div class="label">対象データ件数</div><div class="value">${records.length.toLocaleString()}<span class="unit">件</span></div><div class="sub">元データ ${rawRows.length.toLocaleString()} 件中</div></div>
-      <div class="stat-card"><div class="label">平均リードタイム</div><div class="value">${daysArr.length ? fmt1(mean(daysArr)) : '—'}<span class="unit">日</span></div><div class="sub">${escapeHtml(currentLabel())}</div></div>
-      <div class="stat-card"><div class="label">中央値</div><div class="value">${daysArr.length ? fmt1(median(daysArr)) : '—'}<span class="unit">日</span></div><div class="sub">対象協力会社 ${contractors.size} 社</div></div>
-      <div class="stat-card"><div class="label">除外データ（日付欠損）</div><div class="value">${(missing+negative).toLocaleString()}<span class="unit">件</span></div><div class="sub">日付欠損 ${missing} / 日付不整合 ${negative}</div></div>
+      <div class="stat-card"><div class="label">対象データ件数</div><div class="value">${records.length.toLocaleString()}<span class="unit">件</span></div><div class="sub">対象期間の元データ ${periodTotal.toLocaleString()} 件中</div></div>
+      <div class="stat-card"><div class="label">除外データ件数</div><div class="value">${(missing+negative).toLocaleString()}<span class="unit">件</span></div><div class="sub">日付欠損 ${missing} / 日付不整合 ${negative}</div></div>
+      <div class="stat-card"><div class="label">リードタイム平均値</div><div class="value">${daysArr.length ? fmt1(mean(daysArr)) : '—'}<span class="unit">日</span></div><div class="sub">${escapeHtml(currentLabel())}</div></div>
+      <div class="stat-card"><div class="label">リードタイム中央値</div><div class="value">${daysArr.length ? fmt1(median(daysArr)) : '—'}<span class="unit">日</span></div><div class="sub">対象協力会社 ${contractors.size} 社</div></div>
     `;
   }
 
